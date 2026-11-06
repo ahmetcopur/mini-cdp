@@ -49,3 +49,7 @@ def segment_query(rules):
             query = query.where(compare(profiles.c[rule["field"]], rule["value"]))
 
     return query.order_by(User.id)
+
+
+def count_users(db, rules):
+    return db.scalar(select(func.count()).select_from(segment_query(rules).subquery()))

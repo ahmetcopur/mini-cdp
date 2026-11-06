@@ -2,7 +2,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app import analytics
@@ -21,12 +21,14 @@ from app.schemas import (
     Recommendation,
     SegmentIn,
     SegmentOut,
+    SegmentPreview,
+    SegmentPreviewIn,
     SegmentUsers,
     TopProduct,
     UserIn,
     UserOut,
 )
-from app.segments import segment_query
+from app.segments import count_users, segment_query
 
 
 @asynccontextmanager
@@ -45,6 +47,13 @@ def get_user_or_404(db, user_id):
     if user is None:
         raise HTTPException(404, "User not found")
     return user
+
+
+def get_segment_or_404(db, segment_id):
+    segment = db.get(Segment, segment_id)
+    if segment is None:
+        raise HTTPException(404, "Segment not found")
+    return segment
 
 
 @app.get("/health")
@@ -163,6 +172,29 @@ def create_segment(body: SegmentIn, db: Session = Depends(get_db)):
     return segment
 
 
+@app.post("/segments/preview", response_model=SegmentPreview)
+def preview_segment(body: SegmentPreviewIn, db: Session = Depends(get_db)):
+    return {"count": count_users(db, [rule.model_dump() for rule in body.rules])}
+
+
+@app.put("/segments/{segment_id}", response_model=SegmentOut)
+def update_segment(segment_id: int, body: SegmentIn, db: Session = Depends(get_db)):
+    segment = get_segment_or_404(db, segment_id)
+    if db.scalar(select(Segment).where(Segment.name == body.name, Segment.id != segment_id)):
+        raise HTTPException(409, "Segment name already exists")
+    segment.name = body.name
+    segment.rules = [rule.model_dump() for rule in body.rules]
+    db.commit()
+    db.refresh(segment)
+    return segment
+
+
+@app.delete("/segments/{segment_id}", status_code=204)
+def delete_segment(segment_id: int, db: Session = Depends(get_db)):
+    db.delete(get_segment_or_404(db, segment_id))
+    db.commit()
+
+
 @app.get("/segments", response_model=list[SegmentOut])
 def list_segments(db: Session = Depends(get_db)):
     return db.scalars(select(Segment).order_by(Segment.id)).all()
@@ -175,13 +207,9 @@ def get_segment_users(
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
 ):
-    segment = db.get(Segment, segment_id)
-    if segment is None:
-        raise HTTPException(404, "Segment not found")
-    query = segment_query(segment.rules)
-    count = db.scalar(select(func.count()).select_from(query.subquery()))
-    users = db.scalars(query.limit(limit).offset(offset)).all()
-    return {"segment_id": segment_id, "count": count, "users": users}
+    segment = get_segment_or_404(db, segment_id)
+    users = db.scalars(segment_query(segment.rules).limit(limit).offset(offset)).all()
+    return {"segment_id": segment_id, "count": count_users(db, segment.rules), "users": users}
 
 
 @app.get("/analytics/daily", response_model=list[DailyStats])

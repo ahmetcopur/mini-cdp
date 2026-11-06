@@ -37,7 +37,10 @@ watch(offset, loadUsers, { immediate: true });
 <template>
   <p v-if="error" class="error">{{ error }}</p>
   <template v-else>
-    <h1>{{ name }}</h1>
+    <div class="title-row">
+      <h1>{{ name }}</h1>
+      <RouterLink :to="`/segments/${id}/edit`">Edit segment</RouterLink>
+    </div>
     <p class="muted">{{ count }} users</p>
 
     <table v-if="users.length">

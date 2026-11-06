@@ -86,6 +86,14 @@ class SegmentOut(SegmentIn):
     id: int
 
 
+class SegmentPreviewIn(BaseModel):
+    rules: list[Rule] = Field(min_length=1)
+
+
+class SegmentPreview(BaseModel):
+    count: int
+
+
 class SegmentUsers(BaseModel):
     segment_id: int
     count: int

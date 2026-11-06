@@ -17,7 +17,7 @@ The seed script creates 300 users, 40 products and a couple thousand events with
 
 ## Dashboard
 
-A small Vue 3 app in `frontend/` that only uses the API above. The home page is an overview of the last 7, 30 or 90 days: daily events and revenue as a line chart, the view → cart → purchase funnel with conversion rates, and the top products. The other pages show the segments with how many users are in each, the users in a segment (paged), a user page with the profile, recommendations and recent events, and a form to create a segment from rules. It is plain Vue with vue-router and no UI library, plus Chart.js for the line chart. Docker builds it and serves it with nginx. The API allows requests from `http://localhost:5173` through CORS.
+A small Vue 3 app in `frontend/` that only uses the API above. The home page is an overview of the last 7, 30 or 90 days: daily events and revenue as a line chart, the view → cart → purchase funnel with conversion rates, and the top products. The other pages show the segments with how many users are in each, the users in a segment (paged), a user page with the profile, recommendations and recent events, and a form to create or edit a segment from rules. The form shows how many users match while you change the rules: it waits until nothing has changed for 300 ms before calling the preview endpoint, so typing a number sends one request instead of one per keystroke. It is plain Vue with vue-router and no UI library, plus Chart.js for the line chart. Docker builds it and serves it with nginx. The API allows requests from `http://localhost:5173` through CORS.
 
 To work on it with hot reload, run the API with Docker and start Vite on the same port:
 
@@ -47,6 +47,9 @@ Inside Docker the tests use a separate `cdp_test` database. Outside Docker, `pyt
 | GET | `/users/{id}/profile` | Counts, total spent, last activity, favorite category |
 | GET | `/users/{id}/recommendations` | Recommended products |
 | POST | `/segments` | Create a segment from rules |
+| POST | `/segments/preview` | Count the users that rules would match, without saving anything |
+| PUT | `/segments/{id}` | Change a segment's name and rules |
+| DELETE | `/segments/{id}` | Delete a segment |
 | GET | `/segments` | List segments |
 | GET | `/segments/{id}/users` | Users in a segment, with total count and paging |
 | GET | `/analytics/daily?days=30` | Events and revenue per day, including days with no events |
