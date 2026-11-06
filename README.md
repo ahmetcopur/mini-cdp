@@ -4,6 +4,8 @@ A small customer data platform backend. It collects user events from an online s
 
 Built with Python, FastAPI, PostgreSQL, SQLAlchemy and pytest. Runs with Docker Compose, and GitHub Actions runs the tests against a real Postgres on every push.
 
+**Live demo:** https://mini-cdp-dashboard.onrender.com. Click "Log in as demo viewer" to look around without changing anything. It runs on free plans, so if nobody has used it for a while, the first request takes up to a minute while the server wakes up. The API's interactive docs are at https://mini-cdp-api.onrender.com/docs.
+
 ## Run it
 
 ```bash
