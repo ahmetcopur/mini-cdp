@@ -66,3 +66,14 @@ class Segment(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(100), unique=True)
     rules: Mapped[list] = mapped_column(JSON)
+
+
+class Account(Base):
+    """A person who logs in to the dashboard. Separate from User, which is a store customer."""
+
+    __tablename__ = "accounts"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    email: Mapped[str] = mapped_column(String(255), unique=True)
+    password_hash: Mapped[str] = mapped_column(String(100))
+    role: Mapped[str] = mapped_column(String(10))

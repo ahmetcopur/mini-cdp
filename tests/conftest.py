@@ -1,12 +1,18 @@
 import os
 
-import pytest
-from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
+# The app reads these when it is imported, so they are set first. Docker Compose and
+# CI set their own values, which are kept.
+os.environ.setdefault("JWT_SECRET", "test-secret-that-is-at-least-32-bytes-long")
+os.environ.setdefault("API_KEY", "test-api-key")
 
-from app.database import Base, get_db
-from app.main import app
+import pytest  # noqa: E402
+from fastapi.testclient import TestClient  # noqa: E402
+from sqlalchemy import create_engine  # noqa: E402
+from sqlalchemy.orm import sessionmaker  # noqa: E402
+
+from app.auth import API_KEY, create_token  # noqa: E402
+from app.database import Base, get_db  # noqa: E402
+from app.main import app  # noqa: E402
 
 TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL", "sqlite:///./test.db")
 
@@ -28,10 +34,20 @@ def db():
 
 
 @pytest.fixture
-def client(db):
+def make_client(db):
     app.dependency_overrides[get_db] = lambda: db
-    yield TestClient(app)
+    yield lambda headers=None: TestClient(app, headers=headers)
     app.dependency_overrides.clear()
+
+
+def bearer(role):
+    return {"Authorization": f"Bearer {create_token(1, role)}"}
+
+
+@pytest.fixture
+def client(make_client):
+    """Logged in as an admin and sending the store's API key, so it can call everything."""
+    return make_client({**bearer("admin"), "X-API-Key": API_KEY})
 
 
 @pytest.fixture

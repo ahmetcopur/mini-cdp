@@ -1,7 +1,19 @@
+import { auth, logOut } from "./auth";
+import router from "./router";
+
 const API_URL = "http://localhost:8000";
 
-async function request(path, options) {
-  const response = await fetch(API_URL + path, options);
+async function request(path, options = {}) {
+  const headers = { ...options.headers };
+  if (auth.token) {
+    headers.Authorization = `Bearer ${auth.token}`;
+  }
+  const response = await fetch(API_URL + path, { ...options, headers });
+  if (response.status === 401 && auth.token) {
+    // The token has expired or is no longer valid, so log in again.
+    logOut();
+    router.push({ path: "/login", query: { next: router.currentRoute.value.fullPath } });
+  }
   if (response.status === 204) {
     return null;
   }

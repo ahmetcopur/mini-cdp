@@ -1,8 +1,10 @@
+import os
 import random
 from datetime import datetime, timedelta, timezone
 
+from app.auth import hash_password
 from app.database import Base, SessionLocal, engine
-from app.models import Event, Product, Segment, User
+from app.models import Account, Event, Product, Segment, User
 
 CATALOG = {
     "phones": ["Phone X", "Phone X Pro", "Phone Lite", "Phone Mini", "Phone Max"],
@@ -24,6 +26,10 @@ RELATED = {
 }
 
 COUNTRIES = ["TR", "TR", "TR", "DE", "NL", "GB", "US"]
+
+# The demo viewer is meant to be public: the login page shows it so anyone can look around.
+DEMO_EMAIL = "demo@mini-cdp.dev"
+DEMO_PASSWORD = "demo1234"
 
 
 def main():
@@ -85,6 +91,16 @@ def main():
     db.add_all(events)
     db.add_all(
         [
+            Account(
+                email=os.getenv("ADMIN_EMAIL", "admin@mini-cdp.dev"),
+                password_hash=hash_password(os.environ["ADMIN_PASSWORD"]),
+                role="admin",
+            ),
+            Account(email=DEMO_EMAIL, password_hash=hash_password(DEMO_PASSWORD), role="viewer"),
+        ]
+    )
+    db.add_all(
+        [
             Segment(name="Big spenders", rules=[{"field": "total_spent_cents", "op": "gte", "value": 100000}]),
             Segment(
                 name="Turkish repeat buyers",
@@ -103,7 +119,7 @@ def main():
         ]
     )
     db.commit()
-    print(f"Seeded {len(users)} users, {sum(len(p) for p in products_by_category.values())} products, {len(events)} events, 3 segments")
+    print(f"Seeded {len(users)} users, {sum(len(p) for p in products_by_category.values())} products, {len(events)} events, 3 segments, 2 accounts")
 
 
 if __name__ == "__main__":

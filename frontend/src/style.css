@@ -257,3 +257,38 @@ fieldset {
 .danger {
   color: var(--error);
 }
+
+.account {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.login {
+  max-width: 24rem;
+  margin: 3rem auto;
+}
+
+.login form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.login label {
+  display: flex;
+  flex-direction: column;
+}
+
+.demo {
+  margin-top: 2rem;
+  padding: 1rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--header);
+}
+
+.demo h2 {
+  margin-top: 0;
+  font-size: 1.1rem;
+}

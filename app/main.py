@@ -1,19 +1,22 @@
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app import analytics
+from app.auth import check_password, create_token, current_account, require_admin, require_api_key
 from app.database import Base, engine, get_db
-from app.models import Event, Product, Segment, User
+from app.models import Account, Event, Product, Segment, User
 from app.profiles import build_profile
 from app.recommendations import recommend
 from app.schemas import (
     DailyStats,
     EventIn,
     EventOut,
+    LoginIn,
+    LoginOut,
     Funnel,
     ProductIn,
     ProductOut,
@@ -41,6 +44,12 @@ app = FastAPI(title="Mini CDP", lifespan=lifespan)
 # The dashboard runs on its own port, so the browser needs permission to call the API.
 app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:5173"], allow_methods=["*"], allow_headers=["*"])
 
+# Every route except /health, /docs and /auth/login belongs to one of these, which
+# decides who may call it: any logged-in account, admins only, or the store with its API key.
+viewer = APIRouter(dependencies=[Depends(current_account)])
+admin = APIRouter(dependencies=[Depends(require_admin)])
+store = APIRouter(dependencies=[Depends(require_api_key)])
+
 
 def get_user_or_404(db, user_id):
     user = db.get(User, user_id)
@@ -61,7 +70,17 @@ def health():
     return {"status": "ok"}
 
 
-@app.post("/users", response_model=UserOut, status_code=201)
+@app.post("/auth/login", response_model=LoginOut)
+def login(body: LoginIn, db: Session = Depends(get_db)):
+    account = db.scalar(select(Account).where(Account.email == body.email))
+    # The same answer for an unknown email and a wrong password, so the response
+    # doesn't reveal which emails have accounts.
+    if account is None or not check_password(body.password, account.password_hash):
+        raise HTTPException(401, "Wrong email or password")
+    return {"access_token": create_token(account.id, account.role), "email": account.email, "role": account.role}
+
+
+@store.post("/users", response_model=UserOut, status_code=201)
 def create_user(body: UserIn, db: Session = Depends(get_db)):
     if db.scalar(select(User).where(User.external_id == body.external_id)):
         raise HTTPException(409, "external_id already exists")
@@ -73,7 +92,7 @@ def create_user(body: UserIn, db: Session = Depends(get_db)):
 
 
 # Declared before /users/{user_id}, otherwise "search" would be read as a user id.
-@app.get("/users/search", response_model=list[UserOut])
+@viewer.get("/users/search", response_model=list[UserOut])
 def search_users(
     q: str = Query(min_length=1, max_length=255),
     limit: int = Query(20, ge=1, le=50),
@@ -94,12 +113,12 @@ def search_users(
     return db.scalars(query).all()
 
 
-@app.get("/users/{user_id}", response_model=UserOut)
+@viewer.get("/users/{user_id}", response_model=UserOut)
 def get_user(user_id: int, db: Session = Depends(get_db)):
     return get_user_or_404(db, user_id)
 
 
-@app.post("/products", response_model=ProductOut, status_code=201)
+@store.post("/products", response_model=ProductOut, status_code=201)
 def create_product(body: ProductIn, db: Session = Depends(get_db)):
     if db.scalar(select(Product).where(Product.sku == body.sku)):
         raise HTTPException(409, "sku already exists")
@@ -110,7 +129,7 @@ def create_product(body: ProductIn, db: Session = Depends(get_db)):
     return product
 
 
-@app.get("/products", response_model=list[ProductOut])
+@viewer.get("/products", response_model=list[ProductOut])
 def list_products(category: str | None = None, db: Session = Depends(get_db)):
     query = select(Product).order_by(Product.id)
     if category:
@@ -141,7 +160,7 @@ def make_events(db, items):
     return events
 
 
-@app.post("/events", response_model=EventOut, status_code=201)
+@store.post("/events", response_model=EventOut, status_code=201)
 def create_event(body: EventIn, db: Session = Depends(get_db)):
     event = make_events(db, [body])[0]
     db.add(event)
@@ -150,7 +169,7 @@ def create_event(body: EventIn, db: Session = Depends(get_db)):
     return event
 
 
-@app.post("/events/batch", status_code=201)
+@store.post("/events/batch", status_code=201)
 def create_events(body: list[EventIn], db: Session = Depends(get_db)):
     if not 1 <= len(body) <= 1000:
         raise HTTPException(422, "Send between 1 and 1000 events")
@@ -159,7 +178,7 @@ def create_events(body: list[EventIn], db: Session = Depends(get_db)):
     return {"inserted": len(body)}
 
 
-@app.get("/users/{user_id}/events", response_model=list[EventOut])
+@viewer.get("/users/{user_id}/events", response_model=list[EventOut])
 def list_user_events(user_id: int, limit: int = Query(50, ge=1, le=500), db: Session = Depends(get_db)):
     get_user_or_404(db, user_id)
     query = (
@@ -171,19 +190,19 @@ def list_user_events(user_id: int, limit: int = Query(50, ge=1, le=500), db: Ses
     return db.scalars(query).all()
 
 
-@app.get("/users/{user_id}/profile", response_model=Profile)
+@viewer.get("/users/{user_id}/profile", response_model=Profile)
 def get_profile(user_id: int, db: Session = Depends(get_db)):
     get_user_or_404(db, user_id)
     return build_profile(db, user_id)
 
 
-@app.get("/users/{user_id}/recommendations", response_model=list[Recommendation])
+@viewer.get("/users/{user_id}/recommendations", response_model=list[Recommendation])
 def get_recommendations(user_id: int, limit: int = Query(5, ge=1, le=50), db: Session = Depends(get_db)):
     get_user_or_404(db, user_id)
     return recommend(db, user_id, limit)
 
 
-@app.post("/segments", response_model=SegmentOut, status_code=201)
+@admin.post("/segments", response_model=SegmentOut, status_code=201)
 def create_segment(body: SegmentIn, db: Session = Depends(get_db)):
     if db.scalar(select(Segment).where(Segment.name == body.name)):
         raise HTTPException(409, "Segment name already exists")
@@ -194,12 +213,12 @@ def create_segment(body: SegmentIn, db: Session = Depends(get_db)):
     return segment
 
 
-@app.post("/segments/preview", response_model=SegmentPreview)
+@viewer.post("/segments/preview", response_model=SegmentPreview)
 def preview_segment(body: SegmentPreviewIn, db: Session = Depends(get_db)):
     return {"count": count_users(db, [rule.model_dump() for rule in body.rules])}
 
 
-@app.put("/segments/{segment_id}", response_model=SegmentOut)
+@admin.put("/segments/{segment_id}", response_model=SegmentOut)
 def update_segment(segment_id: int, body: SegmentIn, db: Session = Depends(get_db)):
     segment = get_segment_or_404(db, segment_id)
     if db.scalar(select(Segment).where(Segment.name == body.name, Segment.id != segment_id)):
@@ -211,18 +230,18 @@ def update_segment(segment_id: int, body: SegmentIn, db: Session = Depends(get_d
     return segment
 
 
-@app.delete("/segments/{segment_id}", status_code=204)
+@admin.delete("/segments/{segment_id}", status_code=204)
 def delete_segment(segment_id: int, db: Session = Depends(get_db)):
     db.delete(get_segment_or_404(db, segment_id))
     db.commit()
 
 
-@app.get("/segments", response_model=list[SegmentOut])
+@viewer.get("/segments", response_model=list[SegmentOut])
 def list_segments(db: Session = Depends(get_db)):
     return db.scalars(select(Segment).order_by(Segment.id)).all()
 
 
-@app.get("/segments/{segment_id}/users", response_model=SegmentUsers)
+@viewer.get("/segments/{segment_id}/users", response_model=SegmentUsers)
 def get_segment_users(
     segment_id: int,
     limit: int = Query(100, ge=1, le=1000),
@@ -234,20 +253,25 @@ def get_segment_users(
     return {"segment_id": segment_id, "count": count_users(db, segment.rules), "users": users}
 
 
-@app.get("/analytics/daily", response_model=list[DailyStats])
+@viewer.get("/analytics/daily", response_model=list[DailyStats])
 def get_daily(days: int = Query(30, ge=1, le=365), db: Session = Depends(get_db)):
     return analytics.daily(db, days)
 
 
-@app.get("/analytics/funnel", response_model=Funnel)
+@viewer.get("/analytics/funnel", response_model=Funnel)
 def get_funnel(days: int = Query(30, ge=1, le=365), db: Session = Depends(get_db)):
     return analytics.funnel(db, days)
 
 
-@app.get("/analytics/top-products", response_model=list[TopProduct])
+@viewer.get("/analytics/top-products", response_model=list[TopProduct])
 def get_top_products(
     days: int = Query(30, ge=1, le=365),
     limit: int = Query(10, ge=1, le=50),
     db: Session = Depends(get_db),
 ):
     return analytics.top_products(db, days, limit)
+
+
+app.include_router(viewer)
+app.include_router(admin)
+app.include_router(store)

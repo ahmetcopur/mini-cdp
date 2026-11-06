@@ -13,7 +13,7 @@ docker compose exec api python -m scripts.seed
 
 The API is at http://localhost:8000, the interactive docs are at http://localhost:8000/docs and the dashboard is at http://localhost:5173.
 
-The seed script creates 300 users, 40 products and a couple thousand events with realistic shopping habits (people who buy phones also tend to buy accessories, some users went inactive a month ago, and so on), plus three example segments.
+The seed script creates 300 users, 40 products and a couple thousand events with realistic shopping habits (people who buy phones also tend to buy accessories, some users went inactive a month ago, and so on), plus three example segments. It also creates two dashboard accounts: an admin (`admin@mini-cdp.dev`, with the password from `ADMIN_PASSWORD`, which defaults to `admin-dev-password` in Docker Compose) and a demo viewer (`demo@mini-cdp.dev` / `demo1234`) that the login page offers with one click.
 
 ## Dashboard
 
@@ -35,41 +35,54 @@ Inside Docker the tests use a separate `cdp_test` database. Outside Docker, `pyt
 
 ## Endpoints
 
-| Method | Path | What it does |
-| --- | --- | --- |
-| POST | `/users` | Create a user |
-| GET | `/users/search?q=&limit=20` | Users whose email or external id starts with `q`, ignoring case |
-| GET | `/users/{id}` | Get a user |
-| POST | `/products` | Create a product |
-| GET | `/products?category=` | List products |
-| POST | `/events` | Track one event |
-| POST | `/events/batch` | Track up to 1000 events in one request |
-| GET | `/users/{id}/events` | A user's latest events |
-| GET | `/users/{id}/profile` | Counts, total spent, last activity, favorite category |
-| GET | `/users/{id}/recommendations` | Recommended products |
-| POST | `/segments` | Create a segment from rules |
-| POST | `/segments/preview` | Count the users that rules would match, without saving anything |
-| PUT | `/segments/{id}` | Change a segment's name and rules |
-| DELETE | `/segments/{id}` | Delete a segment |
-| GET | `/segments` | List segments |
-| GET | `/segments/{id}/users` | Users in a segment, with total count and paging |
-| GET | `/analytics/daily?days=30` | Events and revenue per day, including days with no events |
-| GET | `/analytics/funnel?days=30` | Users who viewed, then also added to cart, then also purchased, with conversion rates |
-| GET | `/analytics/top-products?days=30&limit=10` | Products with the most purchases, then the most revenue |
+Access: **viewer** means any logged-in account, **admin** means an admin account, and **store** means the `X-API-Key` header instead of a login.
+
+| Method | Path | Access | What it does |
+| --- | --- | --- | --- |
+| GET | `/health` | open | Health check |
+| POST | `/auth/login` | open | Log in with email and password, returns a token valid for 8 hours |
+| POST | `/users` | store | Create a user |
+| GET | `/users/search?q=&limit=20` | viewer | Users whose email or external id starts with `q`, ignoring case |
+| GET | `/users/{id}` | viewer | Get a user |
+| POST | `/products` | store | Create a product |
+| GET | `/products?category=` | viewer | List products |
+| POST | `/events` | store | Track one event |
+| POST | `/events/batch` | store | Track up to 1000 events in one request |
+| GET | `/users/{id}/events` | viewer | A user's latest events |
+| GET | `/users/{id}/profile` | viewer | Counts, total spent, last activity, favorite category |
+| GET | `/users/{id}/recommendations` | viewer | Recommended products |
+| POST | `/segments` | admin | Create a segment from rules |
+| POST | `/segments/preview` | viewer | Count the users that rules would match, without saving anything |
+| PUT | `/segments/{id}` | admin | Change a segment's name and rules |
+| DELETE | `/segments/{id}` | admin | Delete a segment |
+| GET | `/segments` | viewer | List segments |
+| GET | `/segments/{id}/users` | viewer | Users in a segment, with total count and paging |
+| GET | `/analytics/daily?days=30` | viewer | Events and revenue per day, including days with no events |
+| GET | `/analytics/funnel?days=30` | viewer | Users who viewed, then also added to cart, then also purchased, with conversion rates |
+| GET | `/analytics/top-products?days=30&limit=10` | viewer | Products with the most purchases, then the most revenue |
+
+The interactive docs at `/docs` stay open, and their Authorize button takes a token or an API key.
 
 ## Examples
 
-Track a purchase:
+Track a purchase, the way the store would, with the API key:
 
 ```bash
-curl -X POST localhost:8000/events -H "content-type: application/json" \
+curl -X POST localhost:8000/events -H "content-type: application/json" -H "X-API-Key: dev-api-key" \
   -d '{"user_id": 7, "product_id": 3, "type": "purchase"}'
+```
+
+Log in as the admin and keep the token:
+
+```bash
+TOKEN=$(curl -s -X POST localhost:8000/auth/login -H "content-type: application/json" \
+  -d '{"email": "admin@mini-cdp.dev", "password": "admin-dev-password"}' | python3 -c "import sys, json; print(json.load(sys.stdin)['access_token'])")
 ```
 
 Create a win-back segment for users who browsed but never bought and have been gone for a month:
 
 ```bash
-curl -X POST localhost:8000/segments -H "content-type: application/json" -d '{
+curl -X POST localhost:8000/segments -H "content-type: application/json" -H "Authorization: Bearer $TOKEN" -d '{
   "name": "Win-back",
   "rules": [
     {"field": "days_since_last_event", "op": "gt", "value": 30},
@@ -81,6 +94,12 @@ curl -X POST localhost:8000/segments -H "content-type: application/json" -d '{
 Rules can use `country`, `view_count`, `purchase_count`, `total_spent_cents` and `days_since_last_event`, with the operators `eq`, `gt`, `gte`, `lt` and `lte`. All rules in a segment must match. Invalid rules are rejected with a 422.
 
 ## How it works
+
+**Login and roles.** Dashboard accounts live in their own `accounts` table, separate from `users`, which are the store's customers. Passwords are hashed with bcrypt, which is slow on purpose and salts each hash, so a leaked table can't be reversed with precomputed tables. `POST /auth/login` returns a JWT signed with `JWT_SECRET` that holds the account id and role and expires after 8 hours. The API doesn't keep sessions: it checks the signature and expiry on every request. The flip side is that a token can't be revoked early, and a role change only takes effect at the next login. Every route sits in one of three routers whose dependency does the check, so a route's decorator (`@viewer`, `@admin` or `@store`) shows who may call it. A missing or bad token gets a 401, and a viewer trying to change a segment gets a 403.
+
+The store's endpoints use an API key instead, because they are called by another server, not a person. The key is compared with `secrets.compare_digest`, which takes the same time however much of the key matches, so it can't be guessed one character at a time by timing responses.
+
+The dashboard hides the create, edit and delete controls from viewers and keeps them off admin-only pages, but that is only for convenience. Anyone can call the API without the dashboard, so the API checks the role on every request itself. The dashboard keeps the token in memory and in `sessionStorage`, so a reload keeps you logged in and closing the tab logs you out. Any script running on the page could read `sessionStorage`. An `HttpOnly` cookie would avoid that, but it brings CSRF protection to think about, so it is left for later.
 
 **Profiles and segments are computed with SQL.** A segment is turned into one query. It joins users to an aggregated view of their events (counts, sum of spend, last event time) and adds a `WHERE` condition per rule. Nothing is loaded into Python and filtered there, so it stays fast as the events table grows.
 
@@ -128,6 +147,7 @@ app/
   segments.py         turns segment rules into a SQL query
   recommendations.py  bought-together and popular queries
   analytics.py        daily, funnel and top product queries
+  auth.py             passwords, tokens, roles and the API key check
 scripts/seed.py       demo data
 scripts/evaluate.py   recommender hit rate vs. a popular baseline
 frontend/             Vue dashboard

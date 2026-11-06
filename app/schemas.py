@@ -124,3 +124,15 @@ class TopProduct(BaseModel):
     product: ProductOut
     purchases: int
     revenue_cents: int
+
+
+class LoginIn(BaseModel):
+    email: str
+    password: str
+
+
+class LoginOut(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    email: str
+    role: Literal["admin", "viewer"]

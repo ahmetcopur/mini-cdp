@@ -19,6 +19,10 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://cdp:cdp@db:5432/cdp
       TEST_DATABASE_URL: postgresql+psycopg://cdp:cdp@db:5432/cdp_test
+      # Development defaults. A real deployment must set its own values.
+      JWT_SECRET: ${JWT_SECRET:-dev-only-secret-change-me-before-deploying}
+      API_KEY: ${API_KEY:-dev-api-key}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin-dev-password}
     ports:
       - "8000:8000"
     depends_on:

@@ -1,6 +1,7 @@
 <script setup>
 import { onMounted, ref, watch } from "vue";
 import { get } from "../api";
+import { auth } from "../auth";
 
 const PAGE_SIZE = 20;
 
@@ -39,7 +40,7 @@ watch(offset, loadUsers, { immediate: true });
   <template v-else>
     <div class="title-row">
       <h1>{{ name }}</h1>
-      <RouterLink :to="`/segments/${id}/edit`">Edit segment</RouterLink>
+      <RouterLink v-if="auth.role === 'admin'" :to="`/segments/${id}/edit`">Edit segment</RouterLink>
     </div>
     <p class="muted">{{ count }} users</p>
 
