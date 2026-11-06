@@ -29,20 +29,20 @@ cd frontend && npm install && npm run dev
 
 The API runs on Render as a Docker web service, the dashboard as a Render static site, and Postgres on Neon. All three have free plans. `render.yaml` describes both Render services.
 
-1. **Database.** Create a project on [Neon](https://neon.tech) and copy its connection string. Use the direct one, with connection pooling turned off. Neon's pooler doesn't get along with the prepared statements psycopg uses for repeated queries. The `postgresql://...` string can be pasted as it is: the app switches it to psycopg 3 itself.
-2. **Render.** In the Render dashboard, choose New → Blueprint and pick this repository. Render asks for `DATABASE_URL`: paste the Neon string. It generates `JWT_SECRET` and `API_KEY` by itself.
+1. **Database.** Create a database on [Neon](https://neon.tech). Its Connect dialog gives two connection strings: a pooled one, whose hostname ends in `-pooler`, which goes through Neon's PgBouncer, and a direct one, with connection pooling turned off. The API should use the pooled one. The direct one is for changing the schema, which the seed script does. The app turns off psycopg's prepared statements on pooled hostnames, because PgBouncer in transaction mode can send each transaction to a different server connection. It also checks pooled connections before using them, because Neon closes them when an idle database is suspended. A `postgresql://...` string can be pasted as it is: the app switches it to psycopg 3 itself.
+2. **Render.** In the Render dashboard, choose New → Blueprint and pick this repository. Render asks for `DATABASE_URL`: paste the pooled string. It generates `JWT_SECRET` and `API_KEY` by itself.
 3. **URLs.** `render.yaml` expects `https://mini-cdp-api.onrender.com` and `https://mini-cdp-dashboard.onrender.com`. If Render hands out different names, change `CORS_ORIGINS` on the API and `VITE_API_URL` on the dashboard to the real URLs, and redeploy the dashboard, because Vite builds the API URL into the files.
-4. **Data.** The API creates the tables when it starts. Fill them once from your own machine. This drops and recreates every table, so only run it on a new database:
+4. **Data.** The API creates the tables when it starts. Fill them once from your own machine, over the direct connection string. This drops and recreates every table, so only run it on a new database:
 
 ```bash
-docker compose run --rm -e DATABASE_URL='<Neon connection string>' -e ADMIN_PASSWORD='<a long password>' api python -m scripts.seed
+docker compose run --rm -e DATABASE_URL='<direct connection string>' -e ADMIN_PASSWORD='<a long password>' api python -m scripts.seed
 ```
 
 Settings, and where each one lives. Secrets never go in the repository:
 
 | Name | Secret | Where | What it is |
 | --- | --- | --- | --- |
-| `DATABASE_URL` | yes | Render, API service | The Neon connection string |
+| `DATABASE_URL` | yes | Render, API service | Neon's pooled connection string. The seed is run with the direct one instead |
 | `JWT_SECRET` | yes | Render, API service, generated | Signs login tokens. Changing it logs everyone out |
 | `API_KEY` | yes | Render, API service, generated | What the store sends as `X-API-Key`. Copy it from Render when you need it |
 | `ADMIN_PASSWORD` | yes | Only your machine, when you run the seed | The admin account's password. The API never reads it |
