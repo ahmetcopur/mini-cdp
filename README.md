@@ -17,13 +17,39 @@ The seed script creates 300 users, 40 products and a couple thousand events with
 
 ## Dashboard
 
-A small Vue 3 app in `frontend/` that only uses the API above. The header has a user search that lists matching users as you type, with the same 300 ms wait as the segment preview. The home page is an overview of the last 7, 30 or 90 days: daily events and revenue as a line chart, the view → cart → purchase funnel with conversion rates, and the top products. The other pages show the segments with how many users are in each, the users in a segment (paged), a user page with the profile, recommendations and recent events, and a form to create or edit a segment from rules. The form shows how many users match while you change the rules: it waits until nothing has changed for 300 ms before calling the preview endpoint, so typing a number sends one request instead of one per keystroke. It is plain Vue with vue-router and no UI library, plus Chart.js for the line chart. Docker builds it and serves it with nginx. The API allows requests from `http://localhost:5173` through CORS.
+A small Vue 3 app in `frontend/` that only uses the API above. The header has a user search that lists matching users as you type, with the same 300 ms wait as the segment preview. The home page is an overview of the last 7, 30 or 90 days: daily events and revenue as a line chart, the view → cart → purchase funnel with conversion rates, and the top products. The other pages show the segments with how many users are in each, the users in a segment (paged), a user page with the profile, recommendations and recent events, and a form to create or edit a segment from rules. The form shows how many users match while you change the rules: it waits until nothing has changed for 300 ms before calling the preview endpoint, so typing a number sends one request instead of one per keystroke. It is plain Vue with vue-router and no UI library, plus Chart.js for the line chart. Docker builds it and serves it with nginx. The API allows requests from the origins in `CORS_ORIGINS`, which defaults to `http://localhost:5173`, and the dashboard calls the API at `VITE_API_URL`, which defaults to `http://localhost:8000`.
 
 To work on it with hot reload, run the API with Docker and start Vite on the same port:
 
 ```bash
 cd frontend && npm install && npm run dev
 ```
+
+## Deploy
+
+The API runs on Render as a Docker web service, the dashboard as a Render static site, and Postgres on Neon. All three have free plans. `render.yaml` describes both Render services.
+
+1. **Database.** Create a project on [Neon](https://neon.tech) and copy its connection string. Use the direct one, with connection pooling turned off. Neon's pooler doesn't get along with the prepared statements psycopg uses for repeated queries. The `postgresql://...` string can be pasted as it is: the app switches it to psycopg 3 itself.
+2. **Render.** In the Render dashboard, choose New → Blueprint and pick this repository. Render asks for `DATABASE_URL`: paste the Neon string. It generates `JWT_SECRET` and `API_KEY` by itself.
+3. **URLs.** `render.yaml` expects `https://mini-cdp-api.onrender.com` and `https://mini-cdp-dashboard.onrender.com`. If Render hands out different names, change `CORS_ORIGINS` on the API and `VITE_API_URL` on the dashboard to the real URLs, and redeploy the dashboard, because Vite builds the API URL into the files.
+4. **Data.** The API creates the tables when it starts. Fill them once from your own machine. This drops and recreates every table, so only run it on a new database:
+
+```bash
+docker compose run --rm -e DATABASE_URL='<Neon connection string>' -e ADMIN_PASSWORD='<a long password>' api python -m scripts.seed
+```
+
+Settings, and where each one lives. Secrets never go in the repository:
+
+| Name | Secret | Where | What it is |
+| --- | --- | --- | --- |
+| `DATABASE_URL` | yes | Render, API service | The Neon connection string |
+| `JWT_SECRET` | yes | Render, API service, generated | Signs login tokens. Changing it logs everyone out |
+| `API_KEY` | yes | Render, API service, generated | What the store sends as `X-API-Key`. Copy it from Render when you need it |
+| `ADMIN_PASSWORD` | yes | Only your machine, when you run the seed | The admin account's password. The API never reads it |
+| `CORS_ORIGINS` | no | `render.yaml` | The dashboard's URL, so the browser may call the API |
+| `VITE_API_URL` | no | `render.yaml` | The API's URL, built into the dashboard |
+
+On the free plan the API goes to sleep after 15 minutes without requests and takes about a minute to wake up, so the login page warns about it. Neon's free plan has no time limit, unlike Render's own free Postgres, which is deleted after 30 days.
 
 ## Run the tests
 
@@ -147,9 +173,11 @@ app/
   segments.py         turns segment rules into a SQL query
   recommendations.py  bought-together and popular queries
   analytics.py        daily, funnel and top product queries
-  auth.py             passwords, tokens, roles and the API key check
+  auth.py             tokens, roles and the API key check
+  passwords.py        bcrypt hashing
 scripts/seed.py       demo data
 scripts/evaluate.py   recommender hit rate vs. a popular baseline
+render.yaml           Render services for the API and the dashboard
 frontend/             Vue dashboard
 tests/                pytest suite
 ```

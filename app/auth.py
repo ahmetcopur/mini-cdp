@@ -2,7 +2,6 @@ import os
 import secrets
 from datetime import datetime, timedelta, timezone
 
-import bcrypt
 import jwt
 from fastapi import Depends, HTTPException
 from fastapi.security import APIKeyHeader, HTTPBearer
@@ -10,16 +9,6 @@ from fastapi.security import APIKeyHeader, HTTPBearer
 JWT_SECRET = os.environ["JWT_SECRET"]
 API_KEY = os.environ["API_KEY"]
 TOKEN_LIFETIME = timedelta(hours=8)
-
-
-# bcrypt only uses the first 72 bytes of a password, and bcrypt 5 raises an error
-# for longer ones instead of cutting them, so they are cut here.
-def hash_password(password):
-    return bcrypt.hashpw(password.encode()[:72], bcrypt.gensalt()).decode()
-
-
-def check_password(password, password_hash):
-    return bcrypt.checkpw(password.encode()[:72], password_hash.encode())
 
 
 def create_token(account_id, role):

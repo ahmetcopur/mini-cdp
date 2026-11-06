@@ -3,7 +3,17 @@ import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./cdp.db")
+
+
+def sqlalchemy_url(url):
+    # Hosts like Neon hand out "postgresql://" URLs, which SQLAlchemy would open with
+    # psycopg2. This project uses psycopg 3.
+    if url.startswith("postgresql://"):
+        return "postgresql+psycopg://" + url.removeprefix("postgresql://")
+    return url
+
+
+DATABASE_URL = sqlalchemy_url(os.getenv("DATABASE_URL", "sqlite:///./cdp.db"))
 
 connect_args = {}
 if DATABASE_URL.startswith("sqlite"):

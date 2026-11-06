@@ -1,3 +1,4 @@
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query
@@ -6,9 +7,10 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app import analytics
-from app.auth import check_password, create_token, current_account, require_admin, require_api_key
+from app.auth import create_token, current_account, require_admin, require_api_key
 from app.database import Base, engine, get_db
 from app.models import Account, Event, Product, Segment, User
+from app.passwords import check_password
 from app.profiles import build_profile
 from app.recommendations import recommend
 from app.schemas import (
@@ -41,8 +43,16 @@ async def lifespan(app):
 
 
 app = FastAPI(title="Mini CDP", lifespan=lifespan)
-# The dashboard runs on its own port, so the browser needs permission to call the API.
-app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:5173"], allow_methods=["*"], allow_headers=["*"])
+
+
+def parse_origins(value):
+    return [origin.strip() for origin in value.split(",")]
+
+
+# The dashboard runs on its own address, so the browser needs permission to call the API.
+# CORS_ORIGINS is a comma-separated list, for example the deployed dashboard's URL.
+CORS_ORIGINS = parse_origins(os.getenv("CORS_ORIGINS", "http://localhost:5173"))
+app.add_middleware(CORSMiddleware, allow_origins=CORS_ORIGINS, allow_methods=["*"], allow_headers=["*"])
 
 # Every route except /health, /docs and /auth/login belongs to one of these, which
 # decides who may call it: any logged-in account, admins only, or the store with its API key.

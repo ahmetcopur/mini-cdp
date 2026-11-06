@@ -3,8 +3,9 @@ from datetime import datetime, timedelta, timezone
 import jwt
 import pytest
 
-from app.auth import API_KEY, JWT_SECRET, create_token, hash_password
+from app.auth import API_KEY, JWT_SECRET, create_token
 from app.models import Account
+from app.passwords import hash_password
 
 READS = [
     "/segments",

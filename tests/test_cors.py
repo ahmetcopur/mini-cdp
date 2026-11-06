@@ -1,3 +1,6 @@
+from app.main import parse_origins
+
+
 def test_dashboard_origin_allowed(client):
     headers = {"Origin": "http://localhost:5173", "Access-Control-Request-Method": "POST"}
     response = client.options("/segments", headers=headers)
@@ -8,3 +11,10 @@ def test_dashboard_origin_allowed(client):
 def test_other_origin_not_allowed(client):
     response = client.get("/health", headers={"Origin": "http://evil.example"})
     assert "access-control-allow-origin" not in response.headers
+
+
+def test_parse_origins():
+    assert parse_origins("https://dash.example.com, http://localhost:5173") == [
+        "https://dash.example.com",
+        "http://localhost:5173",
+    ]

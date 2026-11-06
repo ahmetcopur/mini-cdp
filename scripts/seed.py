@@ -2,7 +2,7 @@ import os
 import random
 from datetime import datetime, timedelta, timezone
 
-from app.auth import hash_password
+from app.passwords import hash_password
 from app.database import Base, SessionLocal, engine
 from app.models import Account, Event, Product, Segment, User
 

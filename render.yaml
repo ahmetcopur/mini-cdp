@@ -1,0 +1,37 @@
+# Render Blueprint: the API as a Docker web service and the dashboard as a static site.
+# Secrets are never stored here. DATABASE_URL is entered in Render's dashboard when the
+# Blueprint is created, and Render generates JWT_SECRET and API_KEY itself.
+services:
+  - type: web
+    name: mini-cdp-api
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: 8000
+      # If Render gives the dashboard a different URL, change this to match.
+      - key: CORS_ORIGINS
+        value: https://mini-cdp-dashboard.onrender.com
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: API_KEY
+        generateValue: true
+
+  - type: web
+    name: mini-cdp-dashboard
+    runtime: static
+    buildCommand: cd frontend && npm ci && npm run build
+    staticPublishPath: ./frontend/dist
+    # Let the Vue router handle paths like /users/7.
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      # If Render gives the API a different URL, change this to match.
+      - key: VITE_API_URL
+        value: https://mini-cdp-api.onrender.com

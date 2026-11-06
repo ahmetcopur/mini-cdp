@@ -1,7 +1,8 @@
 import { auth, logOut } from "./auth";
 import router from "./router";
 
-const API_URL = "http://localhost:8000";
+// Set at build time for a deployed dashboard. Docker Compose and `npm run dev` use the default.
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
 async function request(path, options = {}) {
   const headers = { ...options.headers };
