@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import JSON, DateTime, ForeignKey, Index, Integer, String
+from sqlalchemy import JSON, DateTime, ForeignKey, Index, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -18,6 +18,21 @@ class User(Base):
     email: Mapped[str | None] = mapped_column(String(255))
     country: Mapped[str | None] = mapped_column(String(2))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+# Indexes on lower(...) for the case-insensitive prefix search. On Postgres,
+# text_pattern_ops sorts by plain character codes instead of the language rules of the
+# database, which is what lets "LIKE 'abc%'" use the index as a range.
+Index(
+    "ix_users_email_prefix",
+    func.lower(User.email).label("email_lower"),
+    postgresql_ops={"email_lower": "text_pattern_ops"},
+)
+Index(
+    "ix_users_external_id_prefix",
+    func.lower(User.external_id).label("external_id_lower"),
+    postgresql_ops={"external_id_lower": "text_pattern_ops"},
+)
 
 
 class Product(Base):

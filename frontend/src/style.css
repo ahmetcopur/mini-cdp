@@ -46,14 +46,52 @@ nav {
   gap: 1rem;
 }
 
-header form {
-  display: flex;
-  gap: 0.5rem;
+.search {
+  position: relative;
   margin-left: auto;
 }
 
-header input {
-  width: 7rem;
+.search input {
+  width: 16rem;
+  max-width: 100%;
+}
+
+.search-results {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 10;
+  width: 20rem;
+  max-width: calc(100vw - 2rem);
+  margin: 0.25rem 0 0;
+  padding: 0;
+  list-style: none;
+  background: var(--background);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgb(0 0 0 / 15%);
+}
+
+.search-results li {
+  border-bottom: 1px solid var(--border);
+}
+
+.search-results li:last-child {
+  border-bottom: none;
+}
+
+.search-results a,
+.search-results li.muted,
+.search-results li.error {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.5rem 0.75rem;
+}
+
+.search-results a:hover,
+.search-results a:focus {
+  background: var(--header);
 }
 
 main {

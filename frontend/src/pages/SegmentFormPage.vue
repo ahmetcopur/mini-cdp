@@ -2,6 +2,7 @@
 import { onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { del, get, post, put } from "../api";
+import { debounce } from "../debounce";
 
 const FIELDS = ["country", "view_count", "purchase_count", "total_spent_cents", "days_since_last_event"];
 const OPS = { eq: "=", gt: ">", gte: "≥", lt: "<", lte: "≤" };
@@ -41,18 +42,10 @@ function payloadRules() {
   return rules.value.map((r) => ({ ...r, value: r.field === "country" ? r.value : Number(r.value) }));
 }
 
-// Wait until the rules have not changed for 300 ms before asking the API, so typing a
-// value sends one request instead of one per keystroke.
-let timer;
-watch(
-  rules,
-  () => {
-    clearTimeout(timer);
-    timer = setTimeout(preview, 300);
-  },
-  { deep: true, immediate: true },
-);
-onBeforeUnmount(() => clearTimeout(timer));
+// Ask for a new count once the rules have not changed for 300 ms.
+const schedulePreview = debounce(preview);
+watch(rules, schedulePreview, { deep: true, immediate: true });
+onBeforeUnmount(schedulePreview.cancel);
 
 // Responses can arrive out of order, so only the newest request may update the count.
 let latestRequest = 0;

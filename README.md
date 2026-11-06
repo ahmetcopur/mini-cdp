@@ -17,7 +17,7 @@ The seed script creates 300 users, 40 products and a couple thousand events with
 
 ## Dashboard
 
-A small Vue 3 app in `frontend/` that only uses the API above. The home page is an overview of the last 7, 30 or 90 days: daily events and revenue as a line chart, the view → cart → purchase funnel with conversion rates, and the top products. The other pages show the segments with how many users are in each, the users in a segment (paged), a user page with the profile, recommendations and recent events, and a form to create or edit a segment from rules. The form shows how many users match while you change the rules: it waits until nothing has changed for 300 ms before calling the preview endpoint, so typing a number sends one request instead of one per keystroke. It is plain Vue with vue-router and no UI library, plus Chart.js for the line chart. Docker builds it and serves it with nginx. The API allows requests from `http://localhost:5173` through CORS.
+A small Vue 3 app in `frontend/` that only uses the API above. The header has a user search that lists matching users as you type, with the same 300 ms wait as the segment preview. The home page is an overview of the last 7, 30 or 90 days: daily events and revenue as a line chart, the view → cart → purchase funnel with conversion rates, and the top products. The other pages show the segments with how many users are in each, the users in a segment (paged), a user page with the profile, recommendations and recent events, and a form to create or edit a segment from rules. The form shows how many users match while you change the rules: it waits until nothing has changed for 300 ms before calling the preview endpoint, so typing a number sends one request instead of one per keystroke. It is plain Vue with vue-router and no UI library, plus Chart.js for the line chart. Docker builds it and serves it with nginx. The API allows requests from `http://localhost:5173` through CORS.
 
 To work on it with hot reload, run the API with Docker and start Vite on the same port:
 
@@ -38,6 +38,7 @@ Inside Docker the tests use a separate `cdp_test` database. Outside Docker, `pyt
 | Method | Path | What it does |
 | --- | --- | --- |
 | POST | `/users` | Create a user |
+| GET | `/users/search?q=&limit=20` | Users whose email or external id starts with `q`, ignoring case |
 | GET | `/users/{id}` | Get a user |
 | POST | `/products` | Create a product |
 | GET | `/products?category=` | List products |
@@ -90,6 +91,10 @@ Rules can use `country`, `view_count`, `purchase_count`, `total_spent_cents` and
 **Indexes** on `events(user_id, created_at)` and `events(type, product_id)` match the two main access patterns, reading one user's history and counting purchases per product.
 
 **Analytics are grouped in SQL.** Each endpoint is one `GROUP BY` query over the events of the last N days, counted from the start of the first day in UTC. Days without events have no row in the result, so the daily endpoint fills them in with zeros afterwards. The funnel is strict: a user counts at a step only if they also did every step before it in the window, in any order, so conversion rates never go over 100%. A conversion rate is `null` when the step before it has no users.
+
+**User search uses prefix indexes.** The search runs `lower(email) LIKE 'ali%'` (and the same for `external_id`), and each has an index on `lower(...)` built with `text_pattern_ops`. A B-tree index keeps values in sorted order, so every value that starts with `ali` sits in one block between `ali` and `alj`. Postgres jumps to the start of that block and reads until the end of it, which `EXPLAIN` shows as `Index Cond: lower(email) ~>=~ 'ali' AND lower(email) ~<~ 'alj'`. A "contains" search like `'%ali%'` can match anywhere in the string, so the sorted order doesn't help: there is no place in the index to start from, and Postgres has to read every row. That would need a different kind of index, such as a trigram index from `pg_trgm`. The `text_pattern_ops` part is needed because the database sorts text by language rules by default, and those rules don't guarantee that strings with the same prefix sit next to each other. `text_pattern_ops` sorts by plain character codes, where they do. The indexes are on `lower(...)` because the query searches on `lower(...)`, and an index on the plain column wouldn't match it.
+
+Tables are created on startup and `create_all` doesn't add new indexes to tables that already exist. On an existing database, run the seed script again, or create the two indexes by hand from `app/models.py`.
 
 **Batch inserts are all or nothing.** If any event in a batch points to an unknown user or product, the request fails and nothing is saved.
 

@@ -2,7 +2,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app import analytics
@@ -70,6 +70,28 @@ def create_user(body: UserIn, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(user)
     return user
+
+
+# Declared before /users/{user_id}, otherwise "search" would be read as a user id.
+@app.get("/users/search", response_model=list[UserOut])
+def search_users(
+    q: str = Query(min_length=1, max_length=255),
+    limit: int = Query(20, ge=1, le=50),
+    db: Session = Depends(get_db),
+):
+    prefix = q.lower()
+    query = (
+        select(User)
+        .where(
+            or_(
+                func.lower(User.email).startswith(prefix, autoescape=True),
+                func.lower(User.external_id).startswith(prefix, autoescape=True),
+            )
+        )
+        .order_by(User.external_id)
+        .limit(limit)
+    )
+    return db.scalars(query).all()
 
 
 @app.get("/users/{user_id}", response_model=UserOut)
